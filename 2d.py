@@ -6,6 +6,8 @@ import torch.multiprocessing as mp
 from llm.src.mosaic_gpt import GPTBlock, TorchCausalAttention
 from omegaconf import DictConfig
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.tensor.parallel.fsdp import is_available
+
 
 TP_AVAILABLE = False
 try:
@@ -63,9 +65,16 @@ def demo_2d(rank, args):
     )
     model = GPTBlock(gpt_config, causal_attn_cls=TorchCausalAttention).cuda(rank)
     model = parallelize_module(
-        model, twod_mesh, {"causal_attn": PairwiseParallel(), "mlp": PairwiseParallel()}
+        model,
+        twod_mesh,
+        {"causal_attn": PairwiseParallel(), "mlp": PairwiseParallel()},
+        tp_mesh_dim=1,
     )
     fsdp_pg = twod_mesh.get_dim_groups()[0]
+    # verify fsdp
+    fsdp_is_available = is_available()
+    assert fsdp_is_available, "FSDP is not available but required!"
+
     model = FSDP(model, process_group=fsdp_pg)
     # Create a optimizer for the parallelized module.
     LR = 0.25
